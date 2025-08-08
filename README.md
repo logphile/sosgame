@@ -41,5 +41,13 @@ I wanted a real, hands‑on test of ChatGPT‑5’s coding flow — not just sni
 1) Start a static server in this folder (PowerShell helper: `serve.ps1`, default port 5500).
 2) Open `http://localhost:5500/` in your browser.
 3) Optional: place `assets/ambient.mp3` to use a custom background track.
- 
+
+## Play online
+
+This game is currently deployed on Azure Static Web Apps.
+
+Play it here:
+
+https://lemon-pebble-0b7263a10.1.azurestaticapps.net
+
 Have fun — and if you grew up playing SOS on paper, this is a cozy, modern remix you can play together. ❤️
