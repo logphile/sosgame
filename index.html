@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SOS Game (7x7) - Three.js</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700&display=swap" rel="stylesheet">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.1/build/three.module.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="ui">
+    <div id="menu" class="card">
+      <h1>SOS</h1>
+      <p>Choose a mode</p>
+      <div class="buttons">
+        <button id="singleBtn" class="primary">Single Player</button>
+        <button id="vsBtn" class="secondary">VS (2 Players)</button>
+      </div>
+      <p class="hint">Grid size: 7x7 · Place S or O to form SOS. Score grants an extra move.</p>
+    </div>
+
+    <div id="hud" class="hidden">
+      <div class="scoreboard card">
+        <div class="row">
+          <div class="player" id="p1Info">
+            <div class="dot" id="p1Dot"></div>
+            <div>
+              <div class="label">Player 1</div>
+              <div class="score"><span id="p1Score">0</span></div>
+            </div>
+          </div>
+          <div class="spacer"></div>
+          <div class="player" id="p2Info">
+            <div class="dot" id="p2Dot"></div>
+            <div>
+              <div class="label" id="p2Label">Player 2</div>
+              <div class="score"><span id="p2Score">0</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="row current">
+          <div>Turn: <span id="turnLabel">Player 1</span></div>
+          <div class="letter-picker">
+            <button id="pickS" class="chip">S</button>
+            <button id="pickO" class="chip">O</button>
+          </div>
+          <button id="restartBtn" class="link">Restart</button>
+        </div>
+      </div>
+      <div id="endgame" class="card hidden"></div>
+    </div>
+  </div>
+
+  <!-- Optional: place your Pac-Man pac-dot sound at assets/pacdot.mp3 -->
+  <audio id="pacdot" src="assets/pacdot.mp3" preload="auto"></audio>
+
+  <canvas id="three"></canvas>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>
