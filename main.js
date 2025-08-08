@@ -68,6 +68,69 @@ let font;
 // Cell data
 const cells = []; // {mesh, i, j, letterMesh}
 
+// Pinch zoom support
+const pointers = new Map(); // id -> {x,y}
+let pinching = false;
+let pinchStartDist = 0;
+let zoomStart = 1;
+
+function onPointerDown(e) {
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 2) {
+    const pts = Array.from(pointers.values());
+    pinchStartDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    zoomStart = zoomFactor;
+    pinching = true;
+  }
+}
+
+function onPointerMove(e) {
+  // update pointer
+  if (pointers.has(e.pointerId)) {
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  }
+  if (pinching && pointers.size >= 2) {
+    e.preventDefault();
+    const pts = Array.from(pointers.values());
+    const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    if (dist > 0.0001) {
+      const factor = pinchStartDist / dist; // spread fingers -> zoom out slightly
+      setZoom(zoomStart * factor);
+    }
+    return; // skip hover while pinching
+  }
+  // existing hover logic
+  const rect = canvas.getBoundingClientRect();
+  mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObjects(cells.map(c=>c.mesh));
+  if (hoverCell && hoverCell.material) hoverCell.material.color.set(baseCellMat.color);
+  hoverCell = null;
+  if (intersects.length>0) {
+    const m = intersects[0].object;
+    const idx = indexOfCellMesh(m);
+    if (idx>=0) {
+      const { i, j } = cells[idx];
+      // Only highlight if cell is empty
+      if (State.board[i][j] === '') {
+        hoverCell = m;
+        m.material.color.set(hoverMat.color);
+      }
+    }
+  }
+}
+
+function onPointerUp(e) {
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinching = false;
+}
+
+// Attach pinch listeners
+canvas.addEventListener('pointerdown', onPointerDown, { passive: false });
+canvas.addEventListener('pointerup', onPointerUp, { passive: false });
+canvas.addEventListener('pointercancel', onPointerUp, { passive: false });
+
 // --- Ambient Music (non-droning synth fallback) ---
 let padNodes = null; // { timers: number[], baseGain: GainNode }
 
@@ -89,7 +152,7 @@ function startPadFallback() {
   const ctx = ensureAudioCtx();
   if (!ctx) return;
   const baseGain = ctx.createGain();
-  baseGain.gain.value = 0.22; // overall music level
+  baseGain.gain.value = 0.45; // louder overall music level for mobile
   baseGain.connect(ctx.destination);
 
   // gentle lowpass to keep it soft
@@ -107,7 +170,7 @@ function startPadFallback() {
     [196.00, 246.94, 293.66],  // G3, B3, D4
   ];
   let chordIndex = 0;
-  const beat = 0.38; // seconds per step
+  const beat = 0.42; // seconds per step (slightly slower)
   let step = 0;
   const timers = [];
 
@@ -129,11 +192,11 @@ function startPadFallback() {
     const pick1 = pattern[(step) % pattern.length];
     const pick2 = pattern[(step+2) % pattern.length];
     // schedule two staggered plucks
-    scheduleArpNote(ctx, lp, pick1, t0, 0.28, 0.06, 'sine');
-    scheduleArpNote(ctx, lp, pick2, t0 + beat*0.5, 0.25, 0.05, 'triangle');
+    scheduleArpNote(ctx, lp, pick1, t0, 0.28, 0.085, 'sine');
+    scheduleArpNote(ctx, lp, pick2, t0 + beat*0.5, 0.25, 0.075, 'triangle');
     // occasional airy overtone at low volume
     if ((step % 8) === 4) {
-      scheduleArpNote(ctx, lp, top*2, t0 + beat*0.25, 0.22, 0.025, 'sine');
+      scheduleArpNote(ctx, lp, top*2, t0 + beat*0.25, 0.22, 0.035, 'sine');
     }
     step++;
     if (step % 8 === 0) {
@@ -167,7 +230,7 @@ function startBGM() {
   if (bgmEl && !bgmError) {
     try {
       bgmEl.currentTime = 0;
-      bgmEl.volume = 0.35;
+      bgmEl.volume = 0.8; // boost for mobile
       bgmEl.play().then(()=>{/* ok */}).catch(()=>{ startPadFallback(); });
       return;
     } catch { /* fallthrough */ }
@@ -257,6 +320,7 @@ const bgmEl = document.getElementById('bgm');
 if (pacEl) {
   pacEl.addEventListener('canplaythrough', ()=>{ pacdotReady = true; }, { once: true });
   pacEl.addEventListener('error', ()=>{ pacdotError = true; }, { once: true });
+  try { pacEl.volume = 0.9; } catch {}
 }
 if (bgmEl) {
   bgmEl.addEventListener('canplaythrough', ()=>{ bgmReady = true; }, { once: true });
@@ -286,7 +350,7 @@ function beepFallback() {
   main.frequency.setValueAtTime(880, now);        // A5
   overtone.frequency.setValueAtTime(1320, now);   // E6-ish overtone
   gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(0.12, now + 0.01); // attack
+  gain.gain.exponentialRampToValueAtTime(0.2, now + 0.01); // attack louder
   gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2); // decay
   main.connect(gain);
   overtone.connect(gain);
@@ -299,7 +363,7 @@ function beepFallback() {
   blip.frequency.setValueAtTime(988, now + 0.12); // B5
   const g2 = ctx.createGain();
   g2.gain.setValueAtTime(0.0001, now + 0.12);
-  g2.gain.exponentialRampToValueAtTime(0.08, now + 0.13);
+  g2.gain.exponentialRampToValueAtTime(0.14, now + 0.13);
   g2.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
   blip.connect(g2).connect(ctx.destination);
   blip.start(now + 0.12);
@@ -668,8 +732,8 @@ function onResize() {
   // Mobile-friendly: back the camera off only when very small to keep board larger
   const minWH = Math.min(window.innerWidth, window.innerHeight);
   const desiredMin = 560; // was 720; lower value = less backing off => larger board on phones
-  const scale = Math.max(1, desiredMin / minWH);
-  camera.position.set(0, 7.5 * scale, 10.5 * scale);
+  baseScaleGlobal = Math.max(1, desiredMin / minWH);
+  applyCameraScale();
 }
 
 // Boot
