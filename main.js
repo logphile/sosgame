@@ -35,6 +35,18 @@ const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerH
 const cameraTarget = new THREE.Vector3(0, 0, 0);
 camera.position.set(0, 7.5, 10.5);
 camera.lookAt(cameraTarget);
+// Zoom state
+let zoomFactor = 1; // 1 = default, <1 closer, >1 farther
+const MIN_ZOOM = 0.6;
+const MAX_ZOOM = 2.0;
+let baseScaleGlobal = 1; // updated on resize
+function applyCameraScale() {
+  camera.position.set(0, 7.5 * baseScaleGlobal * zoomFactor, 10.5 * baseScaleGlobal * zoomFactor);
+}
+function setZoom(z) {
+  zoomFactor = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z));
+  applyCameraScale();
+}
 
 // lights
 scene.add(new THREE.AmbientLight(0xffffff, 0.9));
@@ -67,69 +79,11 @@ let font;
 
 // Cell data
 const cells = []; // {mesh, i, j, letterMesh}
-
-// Pinch zoom support
+// Pinch tracking (we'll integrate into existing onPointerMove later in file)
 const pointers = new Map(); // id -> {x,y}
 let pinching = false;
 let pinchStartDist = 0;
 let zoomStart = 1;
-
-function onPointerDown(e) {
-  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  if (pointers.size === 2) {
-    const pts = Array.from(pointers.values());
-    pinchStartDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-    zoomStart = zoomFactor;
-    pinching = true;
-  }
-}
-
-function onPointerMove(e) {
-  // update pointer
-  if (pointers.has(e.pointerId)) {
-    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  }
-  if (pinching && pointers.size >= 2) {
-    e.preventDefault();
-    const pts = Array.from(pointers.values());
-    const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-    if (dist > 0.0001) {
-      const factor = pinchStartDist / dist; // spread fingers -> zoom out slightly
-      setZoom(zoomStart * factor);
-    }
-    return; // skip hover while pinching
-  }
-  // existing hover logic
-  const rect = canvas.getBoundingClientRect();
-  mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-  mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-  raycaster.setFromCamera(mouse, camera);
-  const intersects = raycaster.intersectObjects(cells.map(c=>c.mesh));
-  if (hoverCell && hoverCell.material) hoverCell.material.color.set(baseCellMat.color);
-  hoverCell = null;
-  if (intersects.length>0) {
-    const m = intersects[0].object;
-    const idx = indexOfCellMesh(m);
-    if (idx>=0) {
-      const { i, j } = cells[idx];
-      // Only highlight if cell is empty
-      if (State.board[i][j] === '') {
-        hoverCell = m;
-        m.material.color.set(hoverMat.color);
-      }
-    }
-  }
-}
-
-function onPointerUp(e) {
-  pointers.delete(e.pointerId);
-  if (pointers.size < 2) pinching = false;
-}
-
-// Attach pinch listeners
-canvas.addEventListener('pointerdown', onPointerDown, { passive: false });
-canvas.addEventListener('pointerup', onPointerUp, { passive: false });
-canvas.addEventListener('pointercancel', onPointerUp, { passive: false });
 
 // --- Ambient Music (non-droning synth fallback) ---
 let padNodes = null; // { timers: number[], baseGain: GainNode }
@@ -447,6 +401,21 @@ function indexOfCellMesh(mesh) {
 
 let hoverCell = null;
 function onPointerMove(e) {
+  // Update pinch pointers if present
+  if (pointers.has(e.pointerId)) {
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  }
+  if (pinching && pointers.size >= 2) {
+    // Handle pinch zoom and skip hover while pinching
+    e.preventDefault();
+    const pts = Array.from(pointers.values());
+    const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    if (dist > 0.0001) {
+      const factor = pinchStartDist / dist; // spread -> zoom out
+      setZoom(zoomStart * factor);
+    }
+    return;
+  }
   if (State.mode !== 'game' || State.gameOver) return;
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -467,6 +436,21 @@ function onPointerMove(e) {
       }
     }
   }
+}
+
+function onPointerDown(e) {
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 2) {
+    const pts = Array.from(pointers.values());
+    pinchStartDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    zoomStart = zoomFactor;
+    pinching = true;
+  }
+}
+
+function onPointerUp(e) {
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinching = false;
 }
 
 function placeAt(i, j, letter, player) {
@@ -741,6 +725,15 @@ window.addEventListener('resize', onResize);
 // Bind game interactions to the renderer's canvas to avoid interfering with UI clicks
 renderer.domElement.addEventListener('pointermove', onPointerMove);
 renderer.domElement.addEventListener('click', handleClick);
+renderer.domElement.addEventListener('pointerdown', onPointerDown, { passive: false });
+renderer.domElement.addEventListener('pointerup', onPointerUp, { passive: false });
+renderer.domElement.addEventListener('pointercancel', onPointerUp, { passive: false });
+// Wheel zoom (desktop)
+renderer.domElement.addEventListener('wheel', (e)=>{
+  e.preventDefault();
+  const delta = -e.deltaY * 0.0015;
+  setZoom(zoomFactor * (1 + delta));
+}, { passive: false });
 
 setupUI();
 
