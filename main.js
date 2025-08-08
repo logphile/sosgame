@@ -19,6 +19,7 @@ const State = {
   scores: { 1: 0, 2: 0 },
   remaining: GRID_SIZE * GRID_SIZE,
   gameOver: false,
+  soundOn: true,
 };
 
 // --- Three.js Setup ---
@@ -125,6 +126,8 @@ function updateHUD() {
   document.getElementById('turnLabel').textContent = State.currentPlayer === 1 ? 'Player 1' : (State.singlePlayer ? 'AI' : 'Player 2');
   document.getElementById('pickS').classList.toggle('active', State.pickLetter === 'S');
   document.getElementById('pickO').classList.toggle('active', State.pickLetter === 'O');
+  const sb = document.getElementById('soundBtn');
+  if (sb) { sb.setAttribute('aria-pressed', String(State.soundOn)); sb.textContent = `Sound: ${State.soundOn? 'On':'Off'}`; }
 }
 
 let audioCtx = null;
@@ -183,6 +186,7 @@ function beepFallback() {
 }
 
 function playScoreSound() {
+  if (!State.soundOn) return;
   const el = pacEl;
   if (el && !pacdotError) {
     // if not really ready, fallback
@@ -510,6 +514,8 @@ function setupUI() {
   bind('singleBtn', ()=> startGame(true));
   bind('vsBtn', ()=> startGame(false));
   bind('restartBtn', ()=> startGame(State.singlePlayer));
+  bind('menuBtn', ()=> startMenu());
+  bind('soundBtn', ()=> { State.soundOn = !State.soundOn; updateHUD(); });
   bind('pickS', ()=> { State.pickLetter='S'; updateHUD(); });
   bind('pickO', ()=> { State.pickLetter='O'; updateHUD(); });
 }
