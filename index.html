@@ -25,6 +25,7 @@
         <button id="singleBtn" class="primary">Single Player</button>
         <button id="vsBtn" class="secondary">VS (2 Players)</button>
       </div>
+      <div class="menu-footer">Made for <span class="ava">Ava</span> ❤️</div>
       <p class="hint">Grid size: 7x7 · Place S or O to form SOS. Score grants an extra move.</p>
     </div>
 
@@ -55,6 +56,7 @@
           </div>
           <div class="letter-picker">
             <button id="soundBtn" class="chip" aria-pressed="true" title="Toggle sound effects">Sound: On</button>
+            <button id="musicBtn" class="chip" aria-pressed="true" title="Toggle background music">Music: On</button>
             <button id="menuBtn" class="chip" title="Return to main menu">Menu</button>
             <button id="restartBtn" class="link">Restart</button>
           </div>
@@ -66,6 +68,8 @@
 
   <!-- Optional: place your Pac-Man pac-dot sound at assets/pacdot.mp3 -->
   <audio id="pacdot" src="assets/pacdot.mp3" preload="auto"></audio>
+  <!-- Optional ambient music file; if missing, code will synthesize a soft pad fallback -->
+  <audio id="bgm" src="assets/ambient.mp3" preload="auto" loop></audio>
 
   <canvas id="three"></canvas>
 

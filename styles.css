@@ -1,6 +1,33 @@
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
-body { font-family: 'Montserrat', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji'; background: #0e0f13; color: #e8e8ea; }
+body {
+  font-family: 'Montserrat', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji';
+  color: #e8e8ea;
+  /* Animated gradient backdrop */
+  background: linear-gradient(120deg, #0b0c10, #111726, #0b0c10);
+  background-size: 200% 200%;
+  animation: bgShift 18s ease-in-out infinite;
+}
+
+/* Soft vignette and subtle noise */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0; /* behind canvas (#three) */
+  pointer-events: none;
+  background:
+    radial-gradient(1200px 800px at 50% 65%, rgba(255,255,255,0.04), rgba(0,0,0,0) 60%),
+    radial-gradient(900px 600px at 20% 20%, rgba(31,78,255,0.08), rgba(0,0,0,0) 55%),
+    radial-gradient(900px 600px at 80% 20%, rgba(255,59,92,0.08), rgba(0,0,0,0) 55%),
+    radial-gradient(1400px 800px at 50% 110%, rgba(0,0,0,0.55), rgba(0,0,0,0.0) 60%);
+}
+
+@keyframes bgShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
 
 #three { position: fixed; inset: 0; width: 100%; height: 100%; display: block; z-index: 1; touch-action: none; }
 

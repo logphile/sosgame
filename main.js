@@ -20,14 +20,15 @@ const State = {
   remaining: GRID_SIZE * GRID_SIZE,
   gameOver: false,
   soundOn: true,
+  musicOn: true,
 };
 
 // --- Three.js Setup ---
 const canvas = document.getElementById('three');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setClearColor(0x0b0c10, 1);
+renderer.setClearColor(0x000000, 0); // transparent to show CSS animated background
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
@@ -66,6 +67,119 @@ let font;
 
 // Cell data
 const cells = []; // {mesh, i, j, letterMesh}
+
+// --- Ambient Music (non-droning synth fallback) ---
+let padNodes = null; // { timers: number[], baseGain: GainNode }
+
+function scheduleArpNote(ctx, dest, freq, when, dur, vol, type='sine') {
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, when);
+  g.gain.setValueAtTime(0.0001, when);
+  g.gain.exponentialRampToValueAtTime(vol, when + 0.02);
+  const end = when + dur;
+  g.gain.exponentialRampToValueAtTime(0.0001, end);
+  o.connect(g).connect(dest);
+  o.start(when);
+  o.stop(end + 0.02);
+}
+
+function startPadFallback() {
+  const ctx = ensureAudioCtx();
+  if (!ctx) return;
+  const baseGain = ctx.createGain();
+  baseGain.gain.value = 0.22; // overall music level
+  baseGain.connect(ctx.destination);
+
+  // gentle lowpass to keep it soft
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 1800;
+  lp.Q.value = 0.4;
+  lp.connect(baseGain);
+
+  // simple 4-chord ambient loop (Amin – F – C – G)
+  const chords = [
+    [220.00, 261.63, 329.63],  // A3, C4, E4
+    [174.61, 220.00, 261.63],  // F3, A3, C4
+    [196.00, 246.94, 329.63],  // G3 (as walk), B3, E4 (C flavour)
+    [196.00, 246.94, 293.66],  // G3, B3, D4
+  ];
+  let chordIndex = 0;
+  const beat = 0.38; // seconds per step
+  let step = 0;
+  const timers = [];
+
+  // animate filter a little
+  const filterTimer = setInterval(()=>{
+    const t = ctx.currentTime;
+    const target = 1400 + 400*Math.sin(t*0.08);
+    lp.frequency.setTargetAtTime(target, t, 0.6);
+  }, 600);
+  timers.push(filterTimer);
+
+  function loopTick() {
+    if (!padNodes) return; // stopped
+    const t0 = ctx.currentTime + 0.05;
+    const chord = chords[chordIndex];
+    // pick 2 short notes from the chord, sometimes add a soft high harmonic
+    const root = chord[0], mid = chord[1], top = chord[2];
+    const pattern = [root, mid, top, mid];
+    const pick1 = pattern[(step) % pattern.length];
+    const pick2 = pattern[(step+2) % pattern.length];
+    // schedule two staggered plucks
+    scheduleArpNote(ctx, lp, pick1, t0, 0.28, 0.06, 'sine');
+    scheduleArpNote(ctx, lp, pick2, t0 + beat*0.5, 0.25, 0.05, 'triangle');
+    // occasional airy overtone at low volume
+    if ((step % 8) === 4) {
+      scheduleArpNote(ctx, lp, top*2, t0 + beat*0.25, 0.22, 0.025, 'sine');
+    }
+    step++;
+    if (step % 8 === 0) {
+      chordIndex = (chordIndex + 1) % chords.length;
+    }
+  }
+
+  // run the loop
+  loopTick();
+  const seqTimer = setInterval(loopTick, beat*1000);
+  timers.push(seqTimer);
+
+  padNodes = { timers, baseGain };
+}
+
+function stopPadFallback() {
+  if (!padNodes) return;
+  const { timers, baseGain } = padNodes;
+  timers.forEach(id => { try { clearInterval(id); } catch {} });
+  try {
+    const ctx = ensureAudioCtx();
+    const now = ctx ? ctx.currentTime : 0;
+    if (baseGain && baseGain.gain) baseGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+  } catch {}
+  padNodes = null;
+}
+
+function startBGM() {
+  if (!State.musicOn || State.mode !== 'game') return;
+  // Prefer file if available
+  if (bgmEl && !bgmError) {
+    try {
+      bgmEl.currentTime = 0;
+      bgmEl.volume = 0.35;
+      bgmEl.play().then(()=>{/* ok */}).catch(()=>{ startPadFallback(); });
+      return;
+    } catch { /* fallthrough */ }
+  }
+  // fallback synth
+  startPadFallback();
+}
+
+function stopBGM() {
+  if (bgmEl) { try { bgmEl.pause(); } catch {} }
+  stopPadFallback();
+}
 
 // Lines for scored SOS
 const lineGroup = new THREE.Group();
@@ -128,15 +242,25 @@ function updateHUD() {
   document.getElementById('pickO').classList.toggle('active', State.pickLetter === 'O');
   const sb = document.getElementById('soundBtn');
   if (sb) { sb.setAttribute('aria-pressed', String(State.soundOn)); sb.textContent = `Sound: ${State.soundOn? 'On':'Off'}`; }
+  const mb = document.getElementById('musicBtn');
+  if (mb) { mb.setAttribute('aria-pressed', String(State.musicOn)); mb.textContent = `Music: ${State.musicOn? 'On':'Off'}`; }
 }
 
 let audioCtx = null;
 let pacdotReady = false;
 let pacdotError = false;
 const pacEl = document.getElementById('pacdot');
+// BGM element flags
+let bgmReady = false;
+let bgmError = false;
+const bgmEl = document.getElementById('bgm');
 if (pacEl) {
-  pacEl.addEventListener('canplaythrough', ()=>{ pacdotReady = true; });
-  pacEl.addEventListener('error', ()=>{ pacdotError = true; });
+  pacEl.addEventListener('canplaythrough', ()=>{ pacdotReady = true; }, { once: true });
+  pacEl.addEventListener('error', ()=>{ pacdotError = true; }, { once: true });
+}
+if (bgmEl) {
+  bgmEl.addEventListener('canplaythrough', ()=>{ bgmReady = true; }, { once: true });
+  bgmEl.addEventListener('error', ()=>{ bgmError = true; }, { once: true });
 }
 
 function ensureAudioCtx() {
@@ -489,13 +613,19 @@ function resetBoard() {
 
 function startGame(single) {
   State.mode = 'game';
-  State.singlePlayer = !!single;
+  State.singlePlayer = single;
+  State.currentPlayer = 1;
+  State.pickLetter = 'S';
+  State.gameOver = false;
+  State.scores[1] = 0; State.scores[2] = 0;
+  State.remaining = GRID_SIZE * GRID_SIZE;
   document.getElementById('menu').classList.add('hidden');
   document.getElementById('hud').classList.remove('hidden');
-  document.getElementById('p2Label').textContent = single ? 'AI' : 'Player 2';
   resetBoard();
   updateHUD();
-  maybeAIMove();
+  // start ambient music if enabled
+  startBGM();
+  if (State.singlePlayer && State.currentPlayer === 2) maybeAIMove();
 }
 
 function startMenu() {
@@ -503,6 +633,7 @@ function startMenu() {
   document.getElementById('menu').classList.remove('hidden');
   document.getElementById('hud').classList.add('hidden');
   resetBoard();
+  stopBGM();
 }
 
 function setupUI() {
@@ -516,6 +647,11 @@ function setupUI() {
   bind('restartBtn', ()=> startGame(State.singlePlayer));
   bind('menuBtn', ()=> startMenu());
   bind('soundBtn', ()=> { State.soundOn = !State.soundOn; updateHUD(); });
+  bind('musicBtn', ()=> {
+    State.musicOn = !State.musicOn;
+    updateHUD();
+    if (State.musicOn) startBGM(); else stopBGM();
+  });
   bind('pickS', ()=> { State.pickLetter='S'; updateHUD(); });
   bind('pickO', ()=> { State.pickLetter='O'; updateHUD(); });
 }
@@ -529,9 +665,10 @@ function onResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
-  // Mobile-friendly: back the camera off proportionally when screen is small
+  // Mobile-friendly: back the camera off only when very small to keep board larger
   const minWH = Math.min(window.innerWidth, window.innerHeight);
-  const scale = Math.max(1, 720 / minWH); // if min dimension < 720px, move camera back
+  const desiredMin = 560; // was 720; lower value = less backing off => larger board on phones
+  const scale = Math.max(1, desiredMin / minWH);
   camera.position.set(0, 7.5 * scale, 10.5 * scale);
 }
 
